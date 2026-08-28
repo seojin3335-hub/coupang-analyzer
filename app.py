@@ -81,6 +81,7 @@ if check_password():
                     price_elem = prod.select_one('strong.price-value')
                     rating_count_elem = prod.select_one('span.rating-total-count')
                     bought_elem = prod.select_one('span.bought-count') or prod.select_one('div.search-product-bought-count')
+                    link_elem = prod.select_one('a.search-product-link')
                     
                     name = name_elem.text.strip() if name_elem else f"{keyword} 관련 상품 {rank}"
                     price = int(price_elem.text.replace(',', '').strip()) if price_elem else random.randint(9900, 35000)
@@ -89,6 +90,11 @@ if check_password():
                     review_count = int(re.sub(r'[^0-9]', '', review_str)) if re.sub(r'[^0-9]', '', review_str) else random.randint(15, 1200)
                     recent_bought = bought_elem.text.strip() if bought_elem else f"최근 한 달 {random.randint(100, 1500)}개 이상 구매"
                     
+                    if link_elem and 'href' in link_elem.attrs:
+                        prod_url = "https://www.coupang.com" + link_elem['href']
+                    else:
+                        prod_url = f"https://www.coupang.com/np/search?q={requests.utils.quote(keyword)}"
+
                     comp = "1개입"
                     if "2개" in name or "2p" in name.lower() or "1+1" in name:
                         comp = "2개입"
@@ -103,7 +109,8 @@ if check_password():
                         "가격": price,
                         "구성": comp,
                         "리뷰수": review_count,
-                        "최근 한 달 구매": recent_bought
+                        "최근 한 달 구매": recent_bought,
+                        "상품 링크": prod_url
                     })
         except Exception:
             pass
@@ -131,7 +138,8 @@ if check_password():
                     "가격": pr,
                     "구성": comp,
                     "리뷰수": rev,
-                    "최근 한 달 구매": phrase
+                    "최근 한 달 구매": phrase,
+                    "상품 링크": f"https://www.coupang.com/np/search?q={requests.utils.quote(keyword)}"
                 })
                 
         return pd.DataFrame(items)
@@ -144,12 +152,24 @@ if check_password():
         st.success(f"30개 중 {len(df)}개 확인 완료")
         st.markdown("---")
         st.header("1. 쿠팡 시장 분석")
-        st.subheader("① TOP30 상품표")
+        st.subheader("① TOP30 상품표 (링크 클릭 시 상품으로 이동)")
         
         df_display = df.copy()
         df_display['가격'] = df_display['가격'].apply(lambda x: f"{x:,}원")
         df_display['리뷰수'] = df_display['리뷰수'].apply(lambda x: f"{x:,}개")
-        st.dataframe(df_display, use_container_width=True, hide_index=True)
+        
+        # 클릭 가능한 링크 컬럼 추가
+        st.dataframe(
+            df_display,
+            column_config={
+                "상품 링크": st.column_config.LinkColumn(
+                    "상품 바로가기",
+                    display_text="👉 쿠팡 보기"
+                )
+            },
+            use_container_width=True,
+            hide_index=True
+        )
 
         prices = df['가격']
         reviews = df['리뷰수']
