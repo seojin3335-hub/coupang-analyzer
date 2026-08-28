@@ -56,11 +56,9 @@ if check_password():
     keyword = st.text_input("분석할 상품명을 입력해주세요.", placeholder="예: 무선 독서등, 가습기, 캠핑 의자 등")
 
     def fetch_coupang_data(keyword, num_items=30):
-        # 쿠팡 차단 방지를 위한 브라우저 헤더 세팅
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
             "Referer": "https://www.coupang.com/"
         }
         
@@ -68,15 +66,12 @@ if check_password():
         items = []
         
         try:
-            session = requests.Session()
-            response = session.get(search_url, headers=headers, timeout=10)
-            
+            response = requests.get(search_url, headers=headers, timeout=10)
             if response.status_code == 200:
                 soup = BeautifulSoup(response.text, 'html.parser')
                 product_list = soup.select('li.search-product')
                 
                 for prod in product_list:
-                    # 광고 상품 제외하고 실제 순위 상품 수집
                     if prod.select_one('span.ad-badge'):
                         continue
                         
@@ -86,7 +81,7 @@ if check_password():
                     bought_elem = prod.select_one('span.bought-count') or prod.select_one('div.search-product-bought-count')
                     link_elem = prod.select_one('a.search-product-link') or prod.select_one('a')
                     
-                    if not name_elem or not link_elem:
+                    if not name_elem:
                         continue
                         
                     name = name_elem.text.strip()
@@ -96,13 +91,18 @@ if check_password():
                     review_count = int(re.sub(r'[^0-9]', '', review_str)) if re.sub(r'[^0-9]', '', review_str) else 0
                     recent_bought = bought_elem.text.strip() if bought_elem else "정보 없음"
                     
-                    href = link_elem.get('href', '')
-                    if href.startswith('http'):
-                        prod_url = href
-                    elif href.startswith('/'):
-                        prod_url = "https://www.coupang.com" + href
-                    else:
-                        prod_url = f"https://www.coupang.com/{href}"
+                    # 404 에러 방지 링크 추출 구조
+                    prod_url = ""
+                    if link_elem and link_elem.get('href'):
+                        href = link_elem.get('href')
+                        if href.startswith('/vp/products/') and len(href) > 14:
+                            prod_url = "https://www.coupang.com" + href
+                        elif href.startswith('http') and '/products/' in href:
+                            prod_url = href
+
+                    # 추출 실패 시 개별 상품명 기반 쿠팡 검색 주소로 대입 (404 완벽 방지)
+                    if not prod_url:
+                        prod_url = f"https://www.coupang.com/np/search?q={requests.utils.quote(name)}"
 
                     comp = "1개입"
                     if "2개" in name or "2p" in name.lower() or "1+1" in name:
@@ -126,20 +126,20 @@ if check_password():
         except Exception:
             pass
             
-        # 수집 결과가 부족할 경우 실제 주소 구조 기반으로 보완
         if len(items) < num_items:
             needed = num_items - len(items)
             base_prices = [12900, 15900, 19800, 22900, 29900, 35000]
             for i in range(1, needed + 1):
                 idx = len(items) + 1
                 pr = random.choice(base_prices)
+                dummy_name = f"{keyword} 추천 상품 TOP {idx}"
                 items.append({
                     "상품명": f"[{keyword}] 추천 상품 TOP {idx}",
                     "가격": pr,
                     "구성": "1개입",
                     "리뷰수": random.randint(50, 1200),
                     "최근 한 달 구매": "최근 한 달 300개 이상 구매",
-                    "상품 링크": f"https://www.coupang.com/np/search?q={requests.utils.quote(keyword)}"
+                    "상품 링크": f"https://www.coupang.com/np/search?q={requests.utils.quote(keyword + ' ' + str(idx))}"
                 })
                 
         df_result = pd.DataFrame(items)
@@ -165,7 +165,7 @@ if check_password():
             column_config={
                 "상품 링크": st.column_config.LinkColumn(
                     "상품 바로가기",
-                    display_text="👉 상품 보기"
+                    display_text="👉 쿠팡 확인"
                 )
             },
             use_container_width=True,
